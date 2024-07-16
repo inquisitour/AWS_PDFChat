@@ -1,0 +1,67 @@
+{
+  "Comment": "State machine to process PDF files",
+  "StartAt": "SplitPDF",
+  "States": {
+    "SplitPDF": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:us-east-1:510343462926:function:SplitPDF",
+      "Next": "MapState",
+      "Parameters": {
+        "bucket.$": "$.bucket",
+        "key.$": "$.key",
+        "chunks_dir.$": "$.chunks_dir",
+        "pdf_id.$": "$.pdf_id",
+        "client_id.$": "$.client_id",
+        "is_pdf_chat.$": "$.is_pdf_chat"
+      },
+      "ResultPath": "$.splitResult"
+    },
+    "MapState": {
+      "Type": "Map",
+      "ItemsPath": "$.splitResult.chunk_keys",
+      "MaxConcurrency": 2,
+      "Parameters": {
+        "bucket.$": "$.splitResult.bucket",
+        "chunk_key.$": "$$.Map.Item.Value",
+        "embeddings_dir.$": "$.embeddings_dir",
+        "pdf_id.$": "$.pdf_id",
+        "client_id.$": "$.client_id",
+        "is_pdf_chat.$": "$.is_pdf_chat"
+      },
+      "Iterator": {
+        "StartAt": "GenerateEmbeddings",
+        "States": {
+          "GenerateEmbeddings": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:us-east-1:510343462926:function:GenerateEmbeddings",
+            "Next": "StoreEmbeddings",
+            "Parameters": {
+              "bucket.$": "$.bucket",
+              "chunk_key.$": "$.chunk_key",
+              "embeddings_dir.$": "$.embeddings_dir",
+              "pdf_id.$": "$.pdf_id",
+              "client_id.$": "$.client_id",
+              "is_pdf_chat.$": "$.is_pdf_chat"
+            },
+            "ResultPath": "$.embeddingResult"
+          },
+          "StoreEmbeddings": {
+            "Type": "Task",
+            "Resource": "arn:aws:lambda:us-east-1:510343462926:function:StoreEmbeddings",
+            "End": true,
+            "Parameters": {
+              "bucket.$": "$.embeddingResult.bucket",
+              "embedding_key.$": "$.embeddingResult.embedding_key",
+              "pdf_id.$": "$.pdf_id",
+              "client_id.$": "$.client_id",
+              "is_pdf_chat.$": "$.is_pdf_chat"
+            },
+            "ResultPath": "$.storeResult"
+          }
+        }
+      },
+      "ResultPath": "$.mapResult",
+      "End": true
+    }
+  }
+}
