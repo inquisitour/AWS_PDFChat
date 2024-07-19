@@ -87,10 +87,6 @@ To contribute to the project or customize it for your needs:
 4. Write or update tests as necessary.
 5. Submit a pull request with a clear description of your changes.
 
-## 📚 Documentation
-
-For more detailed information about the system's components and how they interact, please refer to the `docs/` directory in this repository.
-
 ## 🐛 Troubleshooting
 
 If you encounter any issues:
