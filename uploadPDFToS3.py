@@ -6,10 +6,13 @@ from botocore.exceptions import ClientError
 
 s3_client = boto3.client('s3')
 stepfunctions_client = boto3.client('stepfunctions')
+lex_client = boto3.client('lex-runtime')
 
 BUCKET_NAME = 'isckrs-conference-rawdata2'
 FOLDER_NAME = 'PDF_Upload/'
-STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:510343462926:stateMachine:PDFChat_Agent'  
+STATE_MACHINE_ARN = 'arn:aws:states:us-east-1:510343462926:stateMachine:PDFChat_Agent'
+BOT_NAME = 'PDFChatAgent'
+BOT_ALIAS = 'pdfchatagent'
 
 def lambda_handler(event, context):
     try:
@@ -37,7 +40,7 @@ def lambda_handler(event, context):
         s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_object_path, Body=file_content)
         
         # Start the state machine execution
-        response = stepfunctions_client.start_execution(
+        stepfunctions_response = stepfunctions_client.start_execution(
             stateMachineArn=STATE_MACHINE_ARN,
             input=json.dumps({
                 'bucket': BUCKET_NAME,
@@ -50,6 +53,25 @@ def lambda_handler(event, context):
             })
         )
         
+        # Interact with Lex bot to set initial session attributes
+        try:
+            lex_response = lex_client.post_text(
+                botName=BOT_NAME,
+                botAlias=BOT_ALIAS,
+                userId=client_id,
+                inputText='start_pdf_processing',
+                sessionAttributes={
+                    'pdf_id': pdf_id,
+                    'client_id': client_id,
+                    'is_pdf_chat': str(is_pdf_chat).lower(),
+                    'processing_complete': 'false'
+                }
+            )
+            print("Lex Response:", lex_response)  # Log Lex response for debugging
+        except ClientError as lex_error:
+            print("Lex ClientError:", lex_error)  # Log Lex ClientError for debugging
+            # Continue with the response even if Lex interaction fails
+        
         return {
             'statusCode': 200,
             'headers': {
@@ -60,7 +82,7 @@ def lambda_handler(event, context):
             },
             'body': json.dumps({
                 'message': 'File uploaded successfully and state machine started.',
-                'executionArn': response['executionArn'],
+                'executionArn': stepfunctions_response['executionArn'],
                 'pdf_id': pdf_id
             })
         }
