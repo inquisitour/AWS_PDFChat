@@ -4,50 +4,87 @@ import os
 from botocore.exceptions import ClientError
 
 # Initialize clients
-lex_client = boto3.client('lex-runtime')
 sns_client = boto3.client('sns')
+lex_client = boto3.client('lex-runtime')
 
 # Environment variables
-BOT_NAME = os.environ['BOT_NAME']
-BOT_ALIAS = os.environ['BOT_ALIAS']
 SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
 
 def lambda_handler(event, context):
     print(f"Received event: {json.dumps(event)}")
     
-    pdf_id = event['pdf_id']
-    client_id = event['client_id']
-    is_pdf_chat = event['is_pdf_chat']
-    processing_complete = event['processing_complete']
+    if 'botName' in event and 'botAlias' in event and 'userId' in event:
+        # Parameters passed from Step Functions
+        bot_name = event['botName']
+        bot_alias = event['botAlias']
+        user_id = event['userId']
+        input_text = event['inputText']
+        session_attributes = event['sessionAttributes']
+        
+        # Convert boolean session attributes to strings
+        for key, value in session_attributes.items():
+            if isinstance(value, bool):
+                session_attributes[key] = str(value).lower()
+        
+        try:
+            response = lex_client.post_text(
+                botName=bot_name,
+                botAlias=bot_alias,
+                userId=user_id,
+                inputText=input_text,
+                sessionAttributes=session_attributes
+            )
+            return response
+        except ClientError as e:
+            print(f"Error posting text to Lex: {e}")
+            raise e
+
+    # Extract information from the Lex event (for original use case)
+    intent_name = event.get('currentIntent', {}).get('name', '')
+    session_attributes = event.get('sessionAttributes', {})
+    
+    if intent_name != 'Notify_PDFChat':
+        return {
+            'sessionAttributes': session_attributes,
+            'dialogAction': {
+                'type': 'Close',
+                'fulfillmentState': 'Failed',
+                'message': {
+                    'contentType': 'PlainText',
+                    'content': 'This lambda function is designed to handle the Notify_PDFChat intent only.'
+                }
+            }
+        }
+    
+    # Extract required information from session attributes
+    pdf_id = session_attributes.get('pdf_id')
+    client_id = session_attributes.get('client_id')
+    is_pdf_chat = session_attributes.get('is_pdf_chat', 'false').lower() == 'true'
+    processing_complete = session_attributes.get('processing_complete', 'false').lower() == 'true'
     
     try:
-        # Update Lex session attributes
-        session_attributes = {
-            'pdf_id': pdf_id,
-            'client_id': client_id,
-            'is_pdf_chat': str(is_pdf_chat).lower(),
-            'processing_complete': str(processing_complete).lower()
-        }
-
-        lex_response = lex_client.post_text(
-            botName=BOT_NAME,
-            botAlias=BOT_ALIAS,
-            userId=client_id,
-            inputText='update_pdf_processing_status',
-            sessionAttributes=session_attributes
-        )
-        
-        print(f"Lex response: {json.dumps(lex_response)}")
+        # Update session attributes
+        session_attributes['pdf_id'] = pdf_id
+        session_attributes['client_id'] = client_id
+        session_attributes['is_pdf_chat'] = str(is_pdf_chat).lower()
+        session_attributes['processing_complete'] = str(processing_complete).lower()
         
         # Notify user that PDF processing is complete if processing_complete is True
         if processing_complete:
-            completion_message = "PDF processing is complete"
-            send_message_to_user(client_id, session_attributes, completion_message)
+            completion_message = "PDF processing is complete. You can now ask questions about the document."
+        else:
+            completion_message = "PDF processing is still in progress. Please wait before asking questions."
         
         return {
-            'statusCode': 200,
-            'body': json.dumps('Lex session updated successfully'),
-            'sessionAttributes': lex_response['sessionAttributes']
+            'sessionAttributes': session_attributes,
+            'dialogAction': {
+                'type': 'Close',
+                'fulfillmentState': 'Fulfilled',
+                'message': {
+                    'contentType': 'PlainText',
+                    'content': completion_message
+                }
+            }
         }
     
     except Exception as e:
@@ -68,20 +105,13 @@ def lambda_handler(event, context):
             print(f"Error sending SNS notification: {sns_error}")
         
         return {
-            'statusCode': 500,
-            'body': json.dumps(error_message)
+            'sessionAttributes': session_attributes,
+            'dialogAction': {
+                'type': 'Close',
+                'fulfillmentState': 'Failed',
+                'message': {
+                    'contentType': 'PlainText',
+                    'content': 'An error occurred while processing your request. Please try again later.'
+                }
+            }
         }
-
-def send_message_to_user(client_id, session_attributes, message):
-    try:
-        # Use post_text to send a message and maintain the session
-        lex_response = lex_client.post_text(
-            botName=BOT_NAME,
-            botAlias=BOT_ALIAS,
-            userId=client_id,
-            inputText=message,  # Send the message as input text
-            sessionAttributes=session_attributes
-        )
-        print(f"Notification sent to user {client_id}: {json.dumps(lex_response)}")
-    except ClientError as e:
-        print(f"Error sending message to user {client_id}: {e}")

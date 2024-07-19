@@ -4,7 +4,11 @@ import os
 from botocore.exceptions import ClientError
 
 sns_client = boto3.client('sns')
-TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+lex_client = boto3.client('lex-runtime')
+
+SNS_TOPIC_ARN = os.environ['SNS_TOPIC_ARN']
+BOT_NAME = os.environ['BOT_NAME']
+BOT_ALIAS = os.environ['BOT_ALIAS']
 
 def lambda_handler(event, context):
     print(f"Received event: {json.dumps(event)}")
@@ -23,15 +27,30 @@ def lambda_handler(event, context):
     try:
         # Send SNS notification
         sns_response = sns_client.publish(
-            TopicArn=TOPIC_ARN,
+            TopicArn=SNS_TOPIC_ARN,
             Message=message,
             Subject='PDF Processing Failure Alert'
         )
         
         print(f"SNS notification sent: {json.dumps(sns_response)}")
         
-        # You could also add code here to update a database or the Lex bot session
-        # to indicate that an error occurred during processing
+        # Update Lex session to indicate processing failure
+        try:
+            lex_response = lex_client.post_text(
+                botName=BOT_NAME,
+                botAlias=BOT_ALIAS,
+                userId=client_id,
+                inputText='notify_pdf_processing_failed',
+                sessionAttributes={
+                    'pdf_id': pdf_id,
+                    'client_id': client_id,
+                    'processing_complete': 'false',
+                    'processing_failed': 'true'
+                }
+            )
+            print(f"Lex session updated: {json.dumps(lex_response)}")
+        except ClientError as lex_error:
+            print(f"Error updating Lex session: {lex_error}")
         
         return {
             'statusCode': 200,

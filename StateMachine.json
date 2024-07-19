@@ -125,18 +125,24 @@
         }
       },
       "ResultPath": "$.mapResult",
-      "Next": "UpdateLexSession"
+      "Next": "NotifyLexBot"
     },
-    "UpdateLexSession": {
+    "NotifyLexBot": {
       "Type": "Task",
       "Resource": "arn:aws:lambda:us-east-1:510343462926:function:UpdateLexSession",
       "Parameters": {
-        "pdf_id.$": "$.pdf_id",
-        "client_id.$": "$.client_id",
-        "is_pdf_chat.$": "$.is_pdf_chat",
-        "processing_complete": true
+        "botName": "${PDFChatAgent}",
+        "botAlias": "${pdfchatagent}",
+        "userId.$": "$.client_id",
+        "inputText": "notify_pdf_processing_complete",
+        "sessionAttributes": {
+          "pdf_id.$": "$.pdf_id",
+          "client_id.$": "$.client_id",
+          "is_pdf_chat.$": "States.StringToJson(States.Format('{}', $.is_pdf_chat))",
+          "processing_complete": "true"
+        }
       },
-      "ResultPath": "$.lexUpdateResult",
+      "ResultPath": "$.lexNotificationResult",
       "End": true
     },
     "FailureHandler": {

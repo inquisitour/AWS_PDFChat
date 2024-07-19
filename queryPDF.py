@@ -11,7 +11,6 @@ def lambda_handler(event, context):
     # Extract session attributes and user query
     session_attributes = event.get('sessionAttributes', {})
     user_query = event['inputTranscript']
-    #user_query = "what is this pdf about?"
     
     is_pdf_chat = session_attributes.get('is_pdf_chat') == 'true'
     processing_complete = session_attributes.get('processing_complete') == 'true'

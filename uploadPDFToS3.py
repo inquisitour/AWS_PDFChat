@@ -16,30 +16,24 @@ BOT_ALIAS = 'pdfchatagent'
 
 def lambda_handler(event, context):
     try:
-        print("Event:", event)  # Log the event for debugging
-        # Parse the body of the request
+        print("Event:", event)
         body = json.loads(event['body'])
-        print("Parsed Body:", body)  # Log the parsed body for debugging
+        print("Parsed Body:", body)
 
-        # Extract information from the new body format
         client_id = body['client_id']
         is_pdf_chat = body.get('is_pdf_chat', False)
         pdf_id = body.get('pdf_id') or str(uuid.uuid4())
         file_content = base64.b64decode(body['file'])
         file_name = f"{client_id}_{pdf_id}.pdf"
 
-        # Create a unique directory for the file
         unique_dir = f"{FOLDER_NAME}{pdf_id}/"
         chunks_dir = f"{unique_dir}chunks/"
         embeddings_dir = f"{unique_dir}embeddings/"
         
-        # Construct the full S3 object path with the folder
         s3_object_path = f"{unique_dir}{file_name}"
         
-        # Upload the file to S3
         s3_client.put_object(Bucket=BUCKET_NAME, Key=s3_object_path, Body=file_content)
         
-        # Start the state machine execution
         stepfunctions_response = stepfunctions_client.start_execution(
             stateMachineArn=STATE_MACHINE_ARN,
             input=json.dumps({
@@ -53,13 +47,12 @@ def lambda_handler(event, context):
             })
         )
         
-        # Interact with Lex bot to set initial session attributes
         try:
             lex_response = lex_client.post_text(
                 botName=BOT_NAME,
                 botAlias=BOT_ALIAS,
                 userId=client_id,
-                inputText='start_pdf_processing',
+                inputText='notify_pdf_processing_started',
                 sessionAttributes={
                     'pdf_id': pdf_id,
                     'client_id': client_id,
@@ -67,10 +60,9 @@ def lambda_handler(event, context):
                     'processing_complete': 'false'
                 }
             )
-            print("Lex Response:", lex_response)  # Log Lex response for debugging
+            print("Lex Response:", lex_response)
         except ClientError as lex_error:
-            print("Lex ClientError:", lex_error)  # Log Lex ClientError for debugging
-            # Continue with the response even if Lex interaction fails
+            print("Lex ClientError:", lex_error)
         
         return {
             'statusCode': 200,
@@ -81,13 +73,13 @@ def lambda_handler(event, context):
                 'Access-Control-Allow-Headers': 'Content-Type'
             },
             'body': json.dumps({
-                'message': 'File uploaded successfully and state machine started.',
+                'message': 'File uploaded successfully and processing started.',
                 'executionArn': stepfunctions_response['executionArn'],
                 'pdf_id': pdf_id
             })
         }
     except ClientError as e:
-        print("ClientError:", e)  # Log ClientError for debugging
+        print("ClientError:", e)
         return {
             'statusCode': 500,
             'headers': {
@@ -99,7 +91,7 @@ def lambda_handler(event, context):
             'body': json.dumps(f'Error uploading file: {e}')
         }
     except Exception as e:
-        print("Exception:", e)  # Log Exception for debugging
+        print("Exception:", e)
         return {
             'statusCode': 400,
             'headers': {
