@@ -3,6 +3,7 @@ import fitz  # PyMuPDF
 import re
 import boto3
 import os
+from botocore.exceptions import ClientError
 
 s3 = boto3.client('s3')
 
@@ -18,9 +19,18 @@ def lambda_handler(event, context):
         chunk_size = event.get('chunk_size', 750)
         chunk_overlap = event.get('chunk_overlap', 300)
         
+        print(f"Processing PDF: {pdf_id} for client: {client_id}")
+        
         # Download the file from S3
-        response = s3.get_object(Bucket=bucket, Key=key)
-        pdf_content = response['Body'].read()
+        try:
+            response = s3.get_object(Bucket=bucket, Key=key)
+            pdf_content = response['Body'].read()
+        except ClientError as e:
+            print(f"Error downloading PDF from S3: {e}")
+            return {
+                'statusCode': 404,
+                'body': json.dumps('PDF file not found in S3')
+            }
         
         # Open the PDF content from memory
         document = fitz.open(stream=pdf_content, filetype="pdf")
@@ -41,7 +51,7 @@ def lambda_handler(event, context):
             }
             s3.put_object(Bucket=bucket, Key=chunk_key, Body=json.dumps(chunk_data))
             chunk_keys.append(chunk_key)
-            print(f"Chunk {index}:\n{chunk.strip()}\n")
+            print(f"Chunk {index} created: {chunk_key}")
         
         bullet_point_pattern = re.compile(r'^(\d+[\.\)]|\*|•|-)\s')
         sentence_pattern = re.compile(r'(?<=[.!?]) +')
@@ -68,19 +78,24 @@ def lambda_handler(event, context):
         if current_chunk.strip():
             add_chunk(current_chunk, len(chunk_keys))
         
+        print(f"PDF processing complete. Total chunks: {len(chunk_keys)}")
+        
         return {
             'statusCode': 200,
             'chunk_keys': chunk_keys,
-            'bucket': bucket
+            'bucket': bucket,
+            'pdf_id': pdf_id,
+            'client_id': client_id,
+            'is_pdf_chat': is_pdf_chat
         }
     except fitz.FitzError as fe:
-        print("FitzError:", fe)
+        print(f"FitzError while processing PDF: {fe}")
         return {
             'statusCode': 400,
             'body': json.dumps(f'Error processing PDF file: {fe}')
         }
     except Exception as e:
-        print("Exception:", e)
+        print(f"Unexpected error: {e}")
         return {
             'statusCode': 500,
             'body': json.dumps(f'Internal server error: {e}')
