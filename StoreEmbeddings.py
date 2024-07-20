@@ -5,8 +5,12 @@ import json
 import os
 from botocore.exceptions import ClientError
 
-# Initialize the AWS S3 client
+# Initialize the AWS S3 client and Lex client
 s3 = boto3.client('s3')
+lex_client = boto3.client('lex-runtime')
+
+BOT_NAME = 'PDFChatAgent'
+BOT_ALIAS = 'pdfchatagent'
 
 def clean_string(input_string):
     """Remove null bytes from the string"""
@@ -82,7 +86,7 @@ def lambda_handler(event, context):
                     cleaned_text,
                     embedding,
                     embedding_content.get('client_id'),
-                    embedding_content.get('is_pdf_chat', False)
+                    True  # Set is_pdf_chat to True
                 )
             ]
         
@@ -104,24 +108,40 @@ def lambda_handler(event, context):
             cur.close()
             conn.close()
         
+        # Update Lex session with is_pdf_chat and processing status
+        client_id = embedding_content.get('client_id')
+        pdf_id = embedding_content['pdf_id']
+        
+        try:
+            lex_response = lex_client.post_text(
+                botName=BOT_NAME,
+                botAlias=BOT_ALIAS,
+                userId=client_id,
+                inputText='notify_pdf_processing_complete',
+                sessionAttributes={
+                    'pdf_id': pdf_id,
+                    'client_id': client_id,
+                    'is_pdf_chat': 'true',
+                    'processing_complete': 'true'
+                }
+            )
+            print("Lex Response:", lex_response)  # Log Lex response for debugging
+            lex_message = lex_response.get('message', 'PDF processing complete. You can now ask questions about the document.')
+        except ClientError as lex_error:
+            print("Lex ClientError:", lex_error)  # Log Lex ClientError for debugging
+            lex_message = "Failed to update Lex session, but PDF processing is complete. You can now ask questions about the document."
+        
         # Prepare the response
-        response = {
+        return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': 'Embedding stored successfully.',
-                'pdf_id': embedding_content['pdf_id'],
-                'client_id': embedding_content.get('client_id'),
-                'is_pdf_chat': embedding_content.get('is_pdf_chat', False)
+                'pdf_id': pdf_id,
+                'client_id': client_id,
+                'is_pdf_chat': True,
+                'lex_message': lex_message
             })
         }
-        
-        # Only include sessionAttributes if they exist in the event
-        if 'sessionAttributes' in event:
-            session_attributes = event['sessionAttributes']
-            session_attributes['is_pdf_chat'] = embedding_content.get('is_pdf_chat', False)
-            response['sessionAttributes'] = session_attributes
-        
-        return response
 
     except Exception as e:
         print(f"Unexpected error: {e}")

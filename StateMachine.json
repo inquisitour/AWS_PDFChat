@@ -1,11 +1,11 @@
 {
-  "Comment": "State machine to process PDF files and update Lex bot session",
+  "Comment": "State machine to process PDF files",
   "StartAt": "SplitPDF",
   "States": {
     "SplitPDF": {
       "Type": "Task",
       "Resource": "arn:aws:lambda:us-east-1:510343462926:function:SplitPDF",
-      "Next": "MapState",
+      "Next": "CheckSplitResult",
       "Parameters": {
         "bucket.$": "$.bucket",
         "key.$": "$.key",
@@ -30,9 +30,21 @@
           "ErrorEquals": [
             "States.ALL"
           ],
+          "ResultPath": "$.error",
           "Next": "FailureHandler"
         }
       ]
+    },
+    "CheckSplitResult": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.splitResult.statusCode",
+          "NumericEquals": 200,
+          "Next": "MapState"
+        }
+      ],
+      "Default": "FailureHandler"
     },
     "MapState": {
       "Type": "Map",
@@ -77,6 +89,7 @@
                 "ErrorEquals": [
                   "States.ALL"
                 ],
+                "ResultPath": "$.error",
                 "Next": "EmbeddingFailureHandler"
               }
             ]
@@ -108,6 +121,7 @@
                 "ErrorEquals": [
                   "States.ALL"
                 ],
+                "ResultPath": "$.error",
                 "Next": "EmbeddingFailureHandler"
               }
             ]
@@ -118,31 +132,14 @@
             "Parameters": {
               "pdf_id.$": "$.pdf_id",
               "client_id.$": "$.client_id",
-              "error.$": "States.StringToJson($.error)"
+              "error.$": "States.Format('Error in embedding process: {}', $.error)",
+              "is_pdf_chat.$": "$.is_pdf_chat"
             },
             "End": true
           }
         }
       },
       "ResultPath": "$.mapResult",
-      "Next": "NotifyLexBot"
-    },
-    "NotifyLexBot": {
-      "Type": "Task",
-      "Resource": "arn:aws:lambda:us-east-1:510343462926:function:UpdateLexSession",
-      "Parameters": {
-        "botName": "${PDFChatAgent}",
-        "botAlias": "${pdfchatagent}",
-        "userId.$": "$.client_id",
-        "inputText": "notify_pdf_processing_complete",
-        "sessionAttributes": {
-          "pdf_id.$": "$.pdf_id",
-          "client_id.$": "$.client_id",
-          "is_pdf_chat.$": "States.StringToJson(States.Format('{}', $.is_pdf_chat))",
-          "processing_complete": "true"
-        }
-      },
-      "ResultPath": "$.lexNotificationResult",
       "End": true
     },
     "FailureHandler": {
@@ -151,7 +148,8 @@
       "Parameters": {
         "pdf_id.$": "$.pdf_id",
         "client_id.$": "$.client_id",
-        "error.$": "States.StringToJson($.error)"
+        "error.$": "States.Format('Error in SplitPDF: {}', $.splitResult.body)",
+        "is_pdf_chat.$": "$.is_pdf_chat"
       },
       "End": true
     }
