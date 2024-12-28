@@ -97,7 +97,10 @@ If you encounter any issues:
 4. Check the SNS topic for any error notifications.
 
 ---
+## Architecture for the experiments
 
-Built with ❤️ by Gravitas AI Team
+<p align="center">
+  <img src="arch.png" alt="System Architecture" width="900">
+</p>
 
 Got questions? Reach out to us at [deshmukhpratik931@gmail.com](deshmukhpratik931@gmail.com)
